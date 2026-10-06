@@ -92,5 +92,61 @@ The first version idealizes migrations as boundary updates with a byte budget. A
 
 Start with static placement, hotness ranking, and hotness with separate promotion/demotion thresholds and cooldown. Replay identical traces and initial placements for fair comparisons, vary tracing resolution, then validate selected policies on real servers.
 
----
+## 4. How does the model behave on hypothetical traces?
 
+**These synthetic examples illustrate the serial cost model; they are not measured performance results.** The trace supplies requests reaching memory directly, not DAMON activity counters.
+
+### Setup
+
+| Parameter | Assumed value |
+| --- | --- |
+| Pages and capacity | Two 4 KiB pages, A and B; DRAM holds one page, CXL holds two, including migration headroom. |
+| Initial placement | A in DRAM, B in CXL, for every run. |
+| Trace duration | Four 1 ms windows. |
+| Access latency | DRAM: 0.1 μs; CXL: 0.3 μs per request. |
+| Copy bandwidth | 2.048 GB/s in either direction: 2 μs to copy 4 KiB. |
+| Migration cost | Promotion: 8 μs overhead + 2 μs copy = 10 μs; demotion: 4 + 2 = 6 μs. |
+
+Compare **static placement** (never move) with **last-window hotness** (put the page with more requests in the completed window into DRAM for the next window; keep placement on ties). A replacement demotes the current DRAM page before promoting the other, costing **16 μs and 8 KiB of migration payload**.
+
+Use boundary updates with an 8 KiB migration budget per boundary; charge migration service cost separately. Do not migrate after the final window. Management cost is set to zero to isolate access and migration effects; queueing, overlap, and elapsed copy time are not simulated.
+
+### Traces and results
+
+Each entry below is **(A requests, B requests)** in that window.
+
+| Synthetic trace | Window 1 | Window 2 | Window 3 | Window 4 |
+| --- | --- | --- | --- | --- |
+| Persistent hotspot: B stays hot | (20, 100) | (20, 100) | (20, 100) | (20, 100) |
+| Brief hotspot: B becomes inactive | (20, 100) | (20, 0) | (20, 0) | (20, 0) |
+| Shifting hotspot: A → B | (100, 20) | (100, 20) | (20, 100) | (20, 100) |
+
+All costs below are in **μs of serial service cost**, including both pages.
+
+| Trace | Static total | Hotness access | Hotness migration | Hotness total | Change vs. static |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Persistent hotspot | 128 | 80 | 16 | **96** | 25% lower |
+| Brief hotspot | 38 | 42 | 32 | **74** | 36 μs higher |
+| Shifting hotspot | 96 | 80 | 16 | **96** | Break-even |
+
+- **Persistent hotspot:** window 1 costs `20 × 0.1 + 100 × 0.3 = 32 μs`. After moving B into DRAM, each remaining window costs `20 × 0.3 + 100 × 0.1 = 16 μs`. Total: `32 + 16 (migration) + 3 × 16 = 96 μs`. Sustained savings repay the move.
+- **Brief hotspot:** the policy promotes B just as its activity ends. It serves A from CXL in window 2, then moves A back. Total: `32 + 6 + 2 + 2 + 2 × 16 = 74 μs`. Following a short burst causes two unnecessary replacements.
+- **Shifting hotspot:** A remains in DRAM through window 3; only then does the policy observe B's new hotspot. Window 4 saves 16 μs, exactly covering the 16 μs replacement cost. Each additional window with the same demand would save another 16 μs.
+
+### What determines whether migration pays off?
+
+For replacing A with B, over the period that the new placement remains in effect:
+
+```text
+Net saving = (future_requests_B - future_requests_A) × (L_CXL - L_DRAM)
+             - promotion_cost - demotion_cost
+
+Here: net saving = (future_requests_B - future_requests_A) × 0.2 μs - 16 μs
+```
+
+B needs **more than 80 additional requests relative to A** to make this replacement worthwhile; 80 is break-even. This includes the penalty of moving A to CXL. Future counts explain the results retrospectively; an online policy must predict them. Longer-lived hotspots and larger latency gaps favor migration; higher migration costs, brief bursts, and delayed observation favor keeping placement stable.
+
+These examples exercise access costs, migration costs, capacity, and decision timing. Shared-bandwidth queueing still requires the resource-model extension described above.
+
+
+---
