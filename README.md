@@ -148,5 +148,87 @@ B needs **more than 80 additional requests relative to A** to make this replacem
 
 These examples exercise access costs, migration costs, capacity, and decision timing. Shared-bandwidth queueing still requires the resource-model extension described above.
 
+### How we generate and run these examples
+
+The experiment uses **two Python scripts and one editable JSON configuration**, with no external dependencies:
+
+```text
+experiment.json → generate_hypothetical_traces.py → hypothetical_traces.csv
+experiment.json + hypothetical_traces.csv → evaluate_hypothetical_traces.py → results + log
+```
+
+**Generate the trace.** In [experiment.json](./examples/experiment.json), `pages` lists all page IDs (for example, `["A", "B"]`). Each scenario is a sequence of phases. A phase specifies how many windows it lasts and a `requests` map containing a nonnegative integer count for every configured page, including zeros. For example, the brief hotspot is:
+
+```json
+"brief_hotspot": [
+  {"windows": 1, "requests": {"A": 20, "B": 100}},
+  {"windows": 3, "requests": {"A": 20, "B": 0}}
+]
+```
+
+The [generator](./examples/generate_hypothetical_traces.py) repeats each phase's counts for the specified number of windows and assigns consecutive window IDs and timestamps using `window_ms`. Output columns are `scenario, window, start_ms, end_ms`, followed by one `requests_<page_id>` column per page. Generation is deterministic: the same configuration produces the same trace; no random seed is needed. These are aggregate request counts, not individual access timestamps.
+
+**Run the simulator.** The [evaluation script](./examples/evaluate_hypothetical_traces.py) reads the CSV and runs both policies independently from the configured initial placement. For each window, it charges accesses to the current tier before making any decisions. The hotness policy considers CXL pages in descending request-count order. It promotes positive-activity pages into free DRAM space; if DRAM is full, it replaces the coldest resident only when the candidate has strictly more requests. Ties retain current residents; other ties follow the configured page order. This is a hotness heuristic, not a migration break-even check.
+
+Multiple moves can occur at one boundary. A promotion into free space consumes one page of migration budget; a replacement consumes two. The budget resets at every boundary and does not accumulate. Each scenario starts a fresh run, and there are no moves after the final window.
+
+From the repository root, using Python 3:
+
+```bash
+# 1. Generate the three synthetic traces.
+python3 examples/generate_hypothetical_traces.py
+
+# 2. Replay both policies and calculate costs.
+python3 examples/evaluate_hypothetical_traces.py
+```
+
+The default commands regenerate [hypothetical_traces.csv](./examples/hypothetical_traces.csv), then overwrite [hypothetical_results.csv](./examples/hypothetical_results.csv) and [hypothetical_window_log.csv](./examples/hypothetical_window_log.csv). The summary contains access/migration/total costs, move counts, and payload bytes; the log shows DRAM page lists before and after decisions, both tiers' resident bytes during the window, costs, actions, and blocking reasons. Default totals reproduce the table above: **128/96, 38/74, and 96/96 μs** for static/hotness.
+
+| What to change in `experiment.json` | Effect |
+| --- | --- |
+| `pages` | Set any nonempty list of unique page IDs; update every phase's request map and initial placement. |
+| Scenario phases: `windows`, `requests` | Change hotspot duration, per-page intensity, and switching points; regenerate the trace. |
+| `window_ms` | Change window timestamps. Counts remain per window, so this alone does not change serial costs. |
+| `dram_capacity_bytes`, `cxl_capacity_bytes` | Set each tier's capacity in bytes. Only whole pages fit; capacity is not rounded up. |
+| `initial_dram_pages` | List the pages initially in DRAM; all remaining pages start in CXL. An empty list is allowed if CXL can hold all pages. |
+| `dram_latency_us`, `cxl_latency_us` | Change the benefit of serving requests from DRAM. |
+| `page_bytes`, `copy_bandwidth_bytes_s`, promotion/demotion overheads | Change the cost of each move. |
+| `migration_budget_bytes` | Limit total payload per boundary; setting it to 0 disables all moves. |
+
+**Capacity rules:** initial placement must fit both tiers, or the simulator rejects the configuration. All pages have the same `page_bytes`. Copying reserves destination space before releasing the source. A replacement demotes the victim first, so CXL needs one spare page of capacity. If both tiers are full, the replacement is blocked; no staging buffer or atomic exchange is assumed. A promotion into free DRAM space can proceed even when CXL is full. The byte budget is a policy limit, not a shared-bandwidth queue model.
+
+### Example with six pages and configurable capacities
+
+[experiment_multi_page.json](./examples/experiment_multi_page.json) is a ready-to-run example with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Pages | A, B, C, D, E, F; 4 KiB each |
+| DRAM capacity | 8192 bytes: two pages |
+| CXL capacity | 20480 bytes: five pages, including one spare slot initially |
+| Initial DRAM pages | A and B |
+| Migration budget | 16384 bytes per boundary: up to two replacements |
+| Windows 1–2: requests for A, B, C, D, E, F | 100, 80, 20, 10, 5, 0 |
+| Windows 3–5: requests for A, B, C, D, E, F | 5, 10, 20, 100, 80, 0 |
+
+Run it separately from the default two-page experiment:
+
+```bash
+python3 examples/generate_hypothetical_traces.py --config examples/experiment_multi_page.json --output examples/multi_page_trace.csv
+python3 examples/evaluate_hypothetical_traces.py --config examples/experiment_multi_page.json --trace examples/multi_page_trace.csv --output-dir examples/multi_page_results
+```
+
+At the end of window 3, the hotness policy replaces A and B with D and E. Static placement costs **241.5 μs**; hotness costs **207.5 μs**, including **32 μs** for two replacements. Reducing the budget to 8192 bytes spreads these replacements across two boundaries and increases the hotness cost to **221.5 μs**. Reducing CXL capacity to 16384 bytes fills both tiers and blocks both replacements, giving **241.5 μs**. These are serial service costs, not application runtimes.
+
+For a separate experiment, copy and edit the configuration, then run:
+
+```bash
+python3 examples/generate_hypothetical_traces.py --config examples/my_experiment.json --output examples/my_trace.csv
+python3 examples/evaluate_hypothetical_traces.py --config examples/my_experiment.json --trace examples/my_trace.csv --output-dir examples/my_results
+```
+
+Keep the configuration and trace with the results. Trace settings affect generation; the simulator reads timing and counts from the saved CSV and hardware parameters from the configuration's `model` section. Changing pages or workload settings therefore requires regenerating the trace, while changing only model parameters requires rerunning the simulator. The simulator rejects CSV page columns that differ from the configured page list. Older configurations must replace `initial_dram_page` with `initial_dram_pages` and per-phase `requests_A`/`requests_B` with the `requests` map shown above.
+
+The prototype supports any configured number of equal-sized pages across two tiers; both policies always run. Policy logic is in `evaluate()`; trace construction is in `generate()`. Management cost remains zero, and shared-bandwidth queues, concurrent requests, and elapsed migration time remain outside this example's scope. Run `python3 examples/test_simulator.py` for regression checks covering the original totals, multiple pages and moves, capacity/headroom, migration budgets, initial placement, and CLI input consistency.
 
 ---

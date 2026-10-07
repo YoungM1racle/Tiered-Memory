@@ -1,4 +1,4 @@
-"""Evaluate synthetic request counts with the serial model in updates.md.
+"""Evaluate synthetic request counts with the serial model in README.md.
 
 Run with Python 3; uses only the standard library. This is an illustrative
 cost calculation, not a DAMON parser or a timed/resource-contention simulator.
