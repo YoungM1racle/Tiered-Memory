@@ -1,0 +1,13 @@
+scenario,window,start_ms,end_ms,requests_A,requests_B
+persistent_hotspot,1,0,1,20,100
+persistent_hotspot,2,1,2,20,100
+persistent_hotspot,3,2,3,20,100
+persistent_hotspot,4,3,4,20,100
+brief_hotspot,1,0,1,20,100
+brief_hotspot,2,1,2,20,0
+brief_hotspot,3,2,3,20,0
+brief_hotspot,4,3,4,20,0
+shifting_hotspot,1,0,1,100,20
+shifting_hotspot,2,1,2,100,20
+shifting_hotspot,3,2,3,20,100
+shifting_hotspot,4,3,4,20,100

@@ -1,0 +1,11 @@
+scenario,policy,window,start_ms,end_ms,dram_pages_during_window,dram_bytes_during_window,cxl_bytes_during_window,access_us,action_after_window,migration_us,dram_pages_after_window
+shifting_six_pages,static,1,0,1,"[""A"", ""B""]",8192,16384,28.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,static,2,1,2,"[""A"", ""B""]",8192,16384,28.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,static,3,2,3,"[""A"", ""B""]",8192,16384,61.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,static,4,3,4,"[""A"", ""B""]",8192,16384,61.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,static,5,4,5,"[""A"", ""B""]",8192,16384,61.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,last_window_hotness,1,0,1,"[""A"", ""B""]",8192,16384,28.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,last_window_hotness,2,1,2,"[""A"", ""B""]",8192,16384,28.5,none,0,"[""A"", ""B""]"
+shifting_six_pages,last_window_hotness,3,2,3,"[""A"", ""B""]",8192,16384,61.5,demote A; promote D; demote B; promote E,32.000000,"[""D"", ""E""]"
+shifting_six_pages,last_window_hotness,4,3,4,"[""D"", ""E""]",8192,16384,28.5,none,0,"[""D"", ""E""]"
+shifting_six_pages,last_window_hotness,5,4,5,"[""D"", ""E""]",8192,16384,28.5,none,0,"[""D"", ""E""]"

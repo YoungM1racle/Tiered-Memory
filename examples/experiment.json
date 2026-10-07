@@ -1,0 +1,29 @@
+{
+  "window_ms": 1,
+  "pages": ["A", "B"],
+  "scenarios": {
+    "persistent_hotspot": [
+      {"windows": 4, "requests": {"A": 20, "B": 100}}
+    ],
+    "brief_hotspot": [
+      {"windows": 1, "requests": {"A": 20, "B": 100}},
+      {"windows": 3, "requests": {"A": 20, "B": 0}}
+    ],
+    "shifting_hotspot": [
+      {"windows": 2, "requests": {"A": 100, "B": 20}},
+      {"windows": 2, "requests": {"A": 20, "B": 100}}
+    ]
+  },
+  "model": {
+    "page_bytes": 4096,
+    "dram_capacity_bytes": 4096,
+    "cxl_capacity_bytes": 8192,
+    "initial_dram_pages": ["A"],
+    "dram_latency_us": 0.1,
+    "cxl_latency_us": 0.3,
+    "copy_bandwidth_bytes_s": 2048000000,
+    "promotion_overhead_us": 8,
+    "demotion_overhead_us": 4,
+    "migration_budget_bytes": 8192
+  }
+}

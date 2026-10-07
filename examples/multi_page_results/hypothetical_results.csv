@@ -1,0 +1,3 @@
+scenario,policy,access_us,migration_us,total_us,promotions,demotions,migration_payload_bytes
+shifting_six_pages,static,241.5,0,241.5,0,0,0
+shifting_six_pages,last_window_hotness,175.5,32.000000,207.500000,2,2,16384

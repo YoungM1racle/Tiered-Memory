@@ -1,0 +1,7 @@
+scenario,policy,access_us,migration_us,total_us,promotions,demotions,migration_payload_bytes
+persistent_hotspot,static,128.0,0,128.0,0,0,0
+persistent_hotspot,last_window_hotness,80.0,16.000000,96.000000,1,1,8192
+brief_hotspot,static,38.0,0,38.0,0,0,0
+brief_hotspot,last_window_hotness,42.0,32.000000,74.000000,2,2,16384
+shifting_hotspot,static,96.0,0,96.0,0,0,0
+shifting_hotspot,last_window_hotness,80.0,16.000000,96.000000,1,1,8192
